@@ -19,6 +19,8 @@ interface ItemSelectorProps<T extends BaseItem> {
   required?: boolean;
   disabled?: boolean;
   helperText?: string;
+  error?: string;
+  showError?: boolean;
   getSearchableText: (item: T) => string;
 }
 
@@ -33,6 +35,8 @@ export default function ItemSelector<T extends BaseItem>({
   required = false,
   disabled = false,
   helperText,
+  error,
+  showError = false,
   getSearchableText,
 }: ItemSelectorProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
@@ -69,13 +73,17 @@ export default function ItemSelector<T extends BaseItem>({
         style={{
           opacity: disabled ? 0.5 : 1,
           cursor: disabled ? 'not-allowed' : 'pointer',
+          padding: '0.5rem 0.75rem',
+          minHeight: '36px',
+          height: '36px',
         }}
         className={`
           input flex items-center justify-between
           ${isOpen ? 'ring-2' : ''}
+          ${showError && error ? 'border-red-500 focus:ring-red-500' : ''}
         `}
       >
-        <div className="flex-1 text-left">
+        <div className="flex-1 text-left overflow-hidden text-sm">
           {selectedItem ? (
             <div className="flex items-center gap-2">
               {renderSelected(selectedItem)}
@@ -85,28 +93,17 @@ export default function ItemSelector<T extends BaseItem>({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 flex-shrink-0 ml-2">
           {selectedItem && !disabled && (
-            <button
+            <div
               onClick={handleClear}
-              className="p-1 rounded transition-colors"
-              style={{
-                background: 'transparent',
-                border: 'none',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--hover-bg)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
-              type="button"
+              className="p-0.5 rounded transition-colors cursor-pointer hover:bg-slate-100"
             >
-              <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-            </button>
+              <X className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+            </div>
           )}
           <ChevronDown
-            className={`w-5 h-5 transition-transform ${
+            className={`w-3.5 h-3.5 transition-transform flex-shrink-0 ${
               isOpen ? 'transform rotate-180' : ''
             }`}
             style={{ color: 'var(--text-muted)' }}
@@ -114,9 +111,15 @@ export default function ItemSelector<T extends BaseItem>({
         </div>
       </button>
 
-      {helperText && (
-        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+      {helperText && !showError && (
+        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
           {helperText}
+        </p>
+      )}
+
+      {showError && error && (
+        <p className="text-[11px] mt-0.5 text-red-600 font-medium">
+          {error}
         </p>
       )}
 

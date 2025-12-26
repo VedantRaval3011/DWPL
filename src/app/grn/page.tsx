@@ -44,9 +44,18 @@ interface GRNForm {
   sendingParty: string;
   partyChallanNumber: string;
   rmSize: string;
-  quantity: number;
-  rate: number;
+  quantity: string;
+  rate: string;
   grnDate: string;
+}
+
+interface FormErrors {
+  sendingParty?: string;
+  partyChallanNumber?: string;
+  rmSize?: string;
+  quantity?: string;
+  rate?: string;
+  grnDate?: string;
 }
 
 export default function GRNPage() {
@@ -60,14 +69,26 @@ export default function GRNPage() {
     sendingParty: '',
     partyChallanNumber: '',
     rmSize: '',
-    quantity: 0,
-    rate: 0,
+    quantity: '',
+    rate: '',
     grnDate: new Date().toISOString().split('T')[0],
   });
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [valueUpdated, setValueUpdated] = useState(false);
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    // Trigger animation when total value changes
+    if (formData.quantity && formData.rate) {
+      setValueUpdated(true);
+      const timer = setTimeout(() => setValueUpdated(false), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [formData.quantity, formData.rate]);
 
   const fetchData = async () => {
     try {
@@ -93,15 +114,64 @@ export default function GRNPage() {
     }
   };
 
+  const validateForm = (): boolean => {
+    const errors: FormErrors = {};
+
+    if (!formData.sendingParty) {
+      errors.sendingParty = 'Sending Party is required';
+    }
+
+    if (!formData.partyChallanNumber.trim()) {
+      errors.partyChallanNumber = 'Party Challan Number is required';
+    }
+
+    if (!formData.rmSize) {
+      errors.rmSize = 'RM Size is required';
+    }
+
+    if (!formData.grnDate) {
+      errors.grnDate = 'GRN Date is required';
+    }
+
+    const quantity = parseFloat(formData.quantity);
+    if (!formData.quantity || isNaN(quantity) || quantity <= 0) {
+      errors.quantity = 'Quantity must be greater than 0';
+    }
+
+    const rate = parseFloat(formData.rate);
+    if (!formData.rate || isNaN(rate) || rate <= 0) {
+      errors.rate = 'Rate must be greater than 0';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
+    // Validate form
+    if (!validateForm()) {
+      return;
+    }
+
+    // Show confirmation dialog
+    setShowConfirmation(true);
+  };
+
+  const confirmAndSubmit = async () => {
     try {
+      const submitData = {
+        ...formData,
+        quantity: parseFloat(formData.quantity),
+        rate: parseFloat(formData.rate),
+      };
+
       const response = await fetch('/api/grn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(submitData),
       });
 
       const data = await response.json();
@@ -109,12 +179,15 @@ export default function GRNPage() {
       if (data.success) {
         await fetchData();
         resetForm();
+        setShowConfirmation(false);
         alert('GRN created successfully! RM stock has been updated.');
       } else {
         setError(data.error);
+        setShowConfirmation(false);
       }
     } catch (err: any) {
       setError(err.message);
+      setShowConfirmation(false);
     }
   };
 
@@ -123,15 +196,19 @@ export default function GRNPage() {
       sendingParty: '',
       partyChallanNumber: '',
       rmSize: '',
-      quantity: 0,
-      rate: 0,
+      quantity: '',
+      rate: '',
       grnDate: new Date().toISOString().split('T')[0],
     });
+    setFormErrors({});
     setShowForm(false);
+    setShowConfirmation(false);
   };
 
   const calculateTotal = () => {
-    return (formData.quantity * formData.rate).toFixed(2);
+    const quantity = parseFloat(formData.quantity) || 0;
+    const rate = parseFloat(formData.rate) || 0;
+    return (quantity * rate).toFixed(2);
   };
 
   if (loading) {
@@ -161,34 +238,44 @@ export default function GRNPage() {
 
       {showForm && (
         <Card className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold" style={{ color: 'var(--foreground)' }}>
               Create New GRN
             </h2>
-            <button onClick={resetForm} className="text-slate-400 hover:text-slate-600">
-              <X className="w-5 h-5" />
+            <button 
+              onClick={resetForm} 
+              className="p-1 rounded transition-colors hover:bg-slate-100"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Party Details */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <ItemSelector
                 label="Sending Party"
                 value={formData.sendingParty}
-                onChange={(value) => setFormData({ ...formData, sendingParty: value })}
+                onChange={(value) => {
+                  setFormData({ ...formData, sendingParty: value });
+                  if (formErrors.sendingParty) {
+                    setFormErrors({ ...formErrors, sendingParty: undefined });
+                  }
+                }}
                 items={parties}
                 placeholder="Select Party"
                 required
+                error={formErrors.sendingParty}
+                showError={!!formErrors.sendingParty}
                 renderSelected={(party) => (
-                  <span className="font-medium" style={{ color: 'var(--foreground)' }}>
+                  <span className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
                     {party.partyName}
                   </span>
                 )}
                 renderOption={(party) => (
-                  <div>
-                    <div className="font-medium" style={{ color: 'var(--foreground)' }}>
-                      {party.partyName}
-                    </div>
+                  <div className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+                    {party.partyName}
                   </div>
                 )}
                 getSearchableText={(party) => party.partyName}
@@ -198,40 +285,50 @@ export default function GRNPage() {
                 <label className="label">Party Challan Number *</label>
                 <input
                   type="text"
-                  className="input"
+                  className={`input ${formErrors.partyChallanNumber ? 'border-red-500' : ''}`}
                   value={formData.partyChallanNumber}
-                  onChange={(e) =>
-                    setFormData({ ...formData, partyChallanNumber: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setFormData({ ...formData, partyChallanNumber: e.target.value });
+                    if (formErrors.partyChallanNumber) {
+                      setFormErrors({ ...formErrors, partyChallanNumber: undefined });
+                    }
+                  }}
                   placeholder="Enter challan number"
-                  required
                 />
+                {formErrors.partyChallanNumber && (
+                  <p className="text-[11px] mt-0.5 text-red-600 font-medium">
+                    {formErrors.partyChallanNumber}
+                  </p>
+                )}
               </div>
 
+              {/* RM Size in same grid row */}
               <ItemSelector
                 label="RM Size"
                 value={formData.rmSize}
-                onChange={(value) => setFormData({ ...formData, rmSize: value })}
+                onChange={(value) => {
+                  setFormData({ ...formData, rmSize: value });
+                  if (formErrors.rmSize) {
+                    setFormErrors({ ...formErrors, rmSize: undefined });
+                  }
+                }}
                 items={rmItems}
                 placeholder="Select RM Size"
                 required
-                helperText="Select the raw material size for this GRN"
+                helperText="Raw material size"
+                error={formErrors.rmSize}
+                showError={!!formErrors.rmSize}
                 renderSelected={(item) => (
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium" style={{ color: 'var(--foreground)' }}>
-                      {item.size}
-                    </span>
-                    <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                      {item.grade} ({item.mill})
-                    </span>
-                  </div>
+                  <span className="text-sm" style={{ color: 'var(--foreground)' }}>
+                    {item.size} - {item.grade} ({item.mill})
+                  </span>
                 )}
                 renderOption={(item) => (
                   <div>
-                    <div className="font-medium" style={{ color: 'var(--foreground)' }}>
+                    <div className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
                       {item.size} - {item.grade}
                     </div>
-                    <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                       Mill: {item.mill}
                     </div>
                   </div>
@@ -241,69 +338,105 @@ export default function GRNPage() {
                 }
               />
 
+              {/* GRN Date in same grid row */}
               <div>
                 <label className="label">GRN Date *</label>
                 <input
                   type="date"
-                  className="input"
+                  className={`input ${formErrors.grnDate ? 'border-red-500' : ''}`}
                   value={formData.grnDate}
-                  onChange={(e) => setFormData({ ...formData, grnDate: e.target.value })}
-                  required
+                  onChange={(e) => {
+                    setFormData({ ...formData, grnDate: e.target.value });
+                    if (formErrors.grnDate) {
+                      setFormErrors({ ...formErrors, grnDate: undefined });
+                    }
+                  }}
                 />
+                {formErrors.grnDate && (
+                  <p className="text-[11px] mt-0.5 text-red-600 font-medium">
+                    {formErrors.grnDate}
+                  </p>
+                )}
               </div>
+            </div>
 
+            {/* Quantity and Rate in one row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="label">Quantity *</label>
                 <input
                   type="number"
                   step="0.01"
-                  className="input"
+                  className={`input ${formErrors.quantity ? 'border-red-500' : ''}`}
                   value={formData.quantity}
-                  onChange={(e) =>
-                    setFormData({ ...formData, quantity: parseFloat(e.target.value) })
-                  }
-                  placeholder="Enter quantity"
+                  onChange={(e) => {
+                    setFormData({ ...formData, quantity: e.target.value });
+                    if (formErrors.quantity) {
+                      setFormErrors({ ...formErrors, quantity: undefined });
+                    }
+                  }}
+                  placeholder="0.00"
                   min="0.01"
-                  required
                 />
+                {formErrors.quantity && (
+                  <p className="text-[11px] mt-0.5 text-red-600 font-medium">
+                    {formErrors.quantity}
+                  </p>
+                )}
               </div>
 
               <div>
                 <label className="label">Rate (per unit) *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input"
-                  value={formData.rate}
-                  onChange={(e) =>
-                    setFormData({ ...formData, rate: parseFloat(e.target.value) })
-                  }
-                  placeholder="Enter rate"
-                  min="0"
-                  required
-                />
+                <div className="input-with-prefix">
+                  <span className="input-prefix">₹</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className={`input input-currency-padding ${formErrors.rate ? 'border-red-500' : ''}`}
+                    value={formData.rate}
+                    onChange={(e) => {
+                      setFormData({ ...formData, rate: e.target.value });
+                      if (formErrors.rate) {
+                        setFormErrors({ ...formErrors, rate: undefined });
+                      }
+                    }}
+                    placeholder="0.00"
+                    min="0.01"
+                  />
+                </div>
+                {formErrors.rate && (
+                  <p className="text-[11px] mt-0.5 text-red-600 font-medium">
+                    {formErrors.rate}
+                  </p>
+                )}
               </div>
             </div>
 
-            <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4">
+            {/* Total Value - Compact */}
+            <div 
+              className={`bg-slate-50 rounded p-2.5 transition-all ${valueUpdated ? 'value-updated' : ''}`}
+            >
               <div className="flex items-center justify-between">
-                <span className="text-lg font-semibold text-slate-900 dark:text-white">
+                <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
                   Total Value:
                 </span>
-                <span className="text-2xl font-bold text-blue-600">
+                <span className="text-lg font-bold text-blue-600">
                   ₹{calculateTotal()}
                 </span>
               </div>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-blue-800">
-                <strong>Note:</strong> Creating this GRN will automatically increase the RM stock
-                for the selected size.
-              </p>
-            </div>
+            {/* Error Summary */}
+            {Object.keys(formErrors).length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded p-2.5">
+                <p className="text-[11px] text-red-800 font-medium">
+                  Please fix {Object.keys(formErrors).length} error{Object.keys(formErrors).length > 1 ? 's' : ''} before submitting
+                </p>
+              </div>
+            )}
 
-            <div className="flex gap-3">
+            {/* Action Buttons */}
+            <div className="flex gap-2 pt-1">
               <button type="submit" className="btn btn-primary">
                 Create GRN
               </button>
@@ -313,6 +446,64 @@ export default function GRNPage() {
             </div>
           </form>
         </Card>
+      )}
+
+      {/* Stock Confirmation Dialog */}
+      {showConfirmation && (
+        <>
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={() => setShowConfirmation(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+              <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--foreground)' }}>
+                Confirm Stock Update
+              </h3>
+              
+              <div className="space-y-3 mb-6">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm font-medium text-blue-900 mb-2">
+                    This action will increase RM stock:
+                  </p>
+                  <div className="space-y-1 text-sm text-blue-800">
+                    <p>
+                      <strong>Material:</strong>{' '}
+                      {rmItems.find(item => item._id === formData.rmSize)?.size || 'N/A'} -{' '}
+                      {rmItems.find(item => item._id === formData.rmSize)?.grade || 'N/A'}
+                    </p>
+                    <p>
+                      <strong>Mill:</strong>{' '}
+                      {rmItems.find(item => item._id === formData.rmSize)?.mill || 'N/A'}
+                    </p>
+                    <p>
+                      <strong>Quantity Increase:</strong> +{formData.quantity} units
+                    </p>
+                    <p>
+                      <strong>Total Value:</strong> ₹{calculateTotal()}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Are you sure you want to create this GRN and update the stock?
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={confirmAndSubmit}
+                  className="btn btn-primary flex-1"
+                >
+                  Confirm & Create GRN
+                </button>
+                <button 
+                  onClick={() => setShowConfirmation(false)}
+                  className="btn btn-outline"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       <Card>

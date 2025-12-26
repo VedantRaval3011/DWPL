@@ -32,7 +32,7 @@ const navigation = [
     ]
   },
   { name: 'GRN', href: '/grn', icon: FileInput },
-  { name: 'Stock', href: '/stock', icon: Warehouse },
+  // { name: 'Stock', href: '/stock', icon: Warehouse }, // Hidden - can be re-enabled later
   { name: 'Outward Challan', href: '/outward-challan', icon: Send },
   { name: 'Tax Invoice', href: '/tax-invoice', icon: Receipt },
 ];

@@ -19,8 +19,8 @@ import {
 interface DashboardStats {
   totalParties: number;
   totalItems: number;
-  rmStock: number;
-  fgStock: number;
+  // rmStock: number; // Hidden - stock tracking continues in backend
+  // fgStock: number; // Hidden - stock tracking continues in backend
   pendingChallans: number;
   pendingInvoices: number;
 }
@@ -40,8 +40,8 @@ export default function Dashboard() {
       setStats({
         totalParties: 0,
         totalItems: 0,
-        rmStock: 0,
-        fgStock: 0,
+        // rmStock: 0,
+        // fgStock: 0,
         pendingChallans: 0,
         pendingInvoices: 0,
       });
@@ -71,20 +71,21 @@ export default function Dashboard() {
       color: 'bg-purple-500',
       link: '/masters/item',
     },
-    {
-      title: 'RM Stock',
-      value: stats?.rmStock || 0,
-      icon: TrendingDown,
-      color: 'bg-orange-500',
-      link: '/stock?category=RM',
-    },
-    {
-      title: 'FG Stock',
-      value: stats?.fgStock || 0,
-      icon: TrendingUp,
-      color: 'bg-green-500',
-      link: '/stock?category=FG',
-    },
+    // Stock cards hidden - stock tracking continues in backend
+    // {
+    //   title: 'RM Stock',
+    //   value: stats?.rmStock || 0,
+    //   icon: TrendingDown,
+    //   color: 'bg-orange-500',
+    //   link: '/stock?category=RM',
+    // },
+    // {
+    //   title: 'FG Stock',
+    //   value: stats?.fgStock || 0,
+    //   icon: TrendingUp,
+    //   color: 'bg-green-500',
+    //   link: '/stock?category=FG',
+    // },
   ];
 
   const quickActions = [
@@ -109,13 +110,14 @@ export default function Dashboard() {
       link: '/tax-invoice',
       color: 'bg-purple-600',
     },
-    {
-      title: 'View Stock',
-      description: 'Check current inventory',
-      icon: Warehouse,
-      link: '/stock',
-      color: 'bg-green-600',
-    },
+    // View Stock action hidden - stock page still accessible via direct URL
+    // {
+    //   title: 'View Stock',
+    //   description: 'Check current inventory',
+    //   icon: Warehouse,
+    //   link: '/stock',
+    //   color: 'bg-green-600',
+    // },
   ];
 
   return (
