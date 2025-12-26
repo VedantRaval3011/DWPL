@@ -1,26 +1,285 @@
 @import "tailwindcss";
-
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Light theme colors matching reference software */
+  --background: #f5f7fa;
+  --foreground: #1a202c;
+  --primary: #3b82f6;
+  --primary-dark: #2563eb;
+  --secondary: #64748b;
+  --accent: #f59e0b;
+  --success: #10b981;
+  --error: #ef4444;
+  --border: #e2e8f0;
+  --card-bg: #ffffff;
+  --hover-bg: #f8fafc;
+  --table-header-bg: #f9fafb;
+  --text-muted: #6b7280;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Force light theme - no dark mode */
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
   }
 }
 
-body {
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
   background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--secondary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Card styles - matching reference software */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+.card:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Button styles - matching reference software */
+.btn {
+  padding: 0.625rem 1.25rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--primary-dark);
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+}
+
+.btn-secondary {
+  background: var(--secondary);
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #475569;
+}
+
+.btn-outline {
+  background: white;
+  border: 1px solid var(--border);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+.btn-outline:hover {
+  background: var(--hover-bg);
+  border-color: var(--primary);
+}
+
+/* Input styles - matching reference software */
+.input {
+  width: 100% !important;
+  padding: 0.875rem 1rem !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px !important;
+  background: white !important;
+  color: var(--foreground) !important;
+  font-size: 0.875rem !important;
+  line-height: 1.5 !important;
+  transition: all 0.2s ease;
+  min-height: 44px !important;
+  height: 44px !important;
+  display: block !important;
+  box-sizing: border-box !important;
+}
+
+.input:focus {
+  outline: none !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+}
+
+.input:disabled {
+  background: #f3f4f6 !important;
+  cursor: not-allowed;
+  color: var(--text-muted) !important;
+}
+
+/* Label styles */
+.label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--foreground);
+  font-size: 0.875rem;
+}
+
+/* Table styles - matching reference software */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+.table th {
+  background: var(--table-header-bg);
+  padding: 0.875rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--foreground);
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+
+.table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+  color: var(--foreground);
+  background: white;
+}
+
+.table tr:hover td {
+  background: var(--hover-bg);
+}
+
+/* Badge styles */
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-info {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+/* Print Styles */
+@media print {
+  /* Hide everything except the print content */
+  body * {
+    visibility: hidden;
+  }
+  
+  #print-content,
+  #print-content * {
+    visibility: visible;
+  }
+  
+  #print-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 20px;
+  }
+  
+  /* Hide modal header when printing */
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Reset backgrounds for print */
+  .bg-slate-50,
+  .bg-slate-100 {
+    background: #f8fafc !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  /* Ensure borders print */
+  .border,
+  .border-slate-300,
+  .border-slate-900 {
+    border-color: #334155 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  /* Ensure text is black for printing */
+  h1, h2, h3, p, span, td, th {
+    color: #1a202c !important;
+  }
+  
+  /* Keep blue accent for total */
+  .text-blue-600 {
+    color: #2563eb !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  /* Page setup */
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+  
+  /* Avoid page breaks in important sections */
+  .border-2 {
+    page-break-inside: avoid;
+  }
 }
