@@ -131,16 +131,16 @@ export default function Dashboard() {
           <Link key={stat.title} href={stat.link}>
             <Card hover className="cursor-pointer">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">
+                <div className="flex-1">
+                  <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-muted)' }}>
                     {stat.title}
                   </p>
-                  <p className="text-3xl font-bold text-slate-900 dark:text-white">
+                  <p className="text-4xl font-bold" style={{ color: 'var(--foreground)' }}>
                     {stat.value}
                   </p>
                 </div>
-                <div className={`${stat.color} p-3 rounded-lg`}>
-                  <stat.icon className="w-6 h-6 text-white" />
+                <div className={`${stat.color} p-4 rounded-lg shadow-sm`}>
+                  <stat.icon className="w-7 h-7 text-white" />
                 </div>
               </div>
             </Card>
@@ -150,21 +150,21 @@ export default function Dashboard() {
 
       {/* Quick Actions */}
       <div className="mb-8">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">
+        <h2 className="text-xl font-semibold mb-6" style={{ color: 'var(--foreground)' }}>
           Quick Actions
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {quickActions.map((action) => (
             <Link key={action.title} href={action.link}>
               <Card hover className="cursor-pointer h-full">
-                <div className="flex flex-col items-center text-center p-4">
-                  <div className={`${action.color} p-4 rounded-full mb-3`}>
-                    <action.icon className="w-6 h-6 text-white" />
+                <div className="flex flex-col items-center text-center py-6 px-4">
+                  <div className={`${action.color} p-5 rounded-full mb-4 shadow-md`}>
+                    <action.icon className="w-7 h-7 text-white" />
                   </div>
-                  <h3 className="font-semibold text-slate-900 dark:text-white mb-1">
+                  <h3 className="font-semibold text-base mb-2" style={{ color: 'var(--foreground)' }}>
                     {action.title}
                   </h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                     {action.description}
                   </p>
                 </div>
@@ -176,21 +176,21 @@ export default function Dashboard() {
 
       {/* System Info */}
       <Card>
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">
-          System Overview
+        <h2 className="text-xl font-semibold mb-6" style={{ color: 'var(--foreground)' }}>
+          System Status
         </h2>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-            <span className="text-slate-600 dark:text-slate-400">System Status</span>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+            <span className="font-medium" style={{ color: 'var(--text-muted)' }}>System Status</span>
             <span className="badge badge-success">Operational</span>
           </div>
-          <div className="flex items-center justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-            <span className="text-slate-600 dark:text-slate-400">Database</span>
+          <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+            <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Database</span>
             <span className="badge badge-success">Connected</span>
           </div>
-          <div className="flex items-center justify-between py-2">
-            <span className="text-slate-600 dark:text-slate-400">Version</span>
-            <span className="text-slate-900 dark:text-white font-medium">1.0.0</span>
+          <div className="flex items-center justify-between py-3">
+            <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Version</span>
+            <span className="font-semibold" style={{ color: 'var(--foreground)' }}>1.0.0</span>
           </div>
         </div>
       </Card>

@@ -12,9 +12,9 @@ export default function PageHeader({ title, description, action }: PageHeaderPro
   return (
     <div className="mb-8 flex items-center justify-between">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{title}</h1>
+        <h1 className="text-3xl font-bold" style={{ color: 'var(--foreground)' }}>{title}</h1>
         {description && (
-          <p className="mt-2 text-slate-600 dark:text-slate-400">{description}</p>
+          <p className="mt-2" style={{ color: 'var(--text-muted)' }}>{description}</p>
         )}
       </div>
       {action && <div>{action}</div>}
