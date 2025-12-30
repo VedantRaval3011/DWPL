@@ -35,18 +35,30 @@ export default function Dashboard() {
 
   const fetchDashboardStats = async () => {
     try {
-      // In a real implementation, create a dedicated dashboard API endpoint
-      // For now, we'll use placeholder data
+      const response = await fetch('/api/dashboard');
+      const result = await response.json();
+      
+      if (result.success) {
+        setStats(result.data);
+      } else {
+        console.error('Failed to fetch dashboard stats:', result.error);
+        // Fallback to zeros if API fails
+        setStats({
+          totalParties: 0,
+          totalItems: 0,
+          pendingChallans: 0,
+          pendingInvoices: 0,
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+      // Fallback to zeros if API fails
       setStats({
         totalParties: 0,
         totalItems: 0,
-        // rmStock: 0,
-        // fgStock: 0,
         pendingChallans: 0,
         pendingInvoices: 0,
       });
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
     } finally {
       setLoading(false);
     }

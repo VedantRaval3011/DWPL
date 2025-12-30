@@ -184,94 +184,124 @@ export default function OutwardChallanPage() {
       if (fgData.success) setFgItems(fgData.data);
       if (rmData.success) setRmItems(rmData.data);
       if (bomsData.success) setBoms(bomsData.data);
+      
+      // Check if any critical data is missing
+      if (!partiesData.success || partiesData.data.length === 0) {
+        console.warn('No parties found. Please add parties first.');
+      }
+      if (!fgData.success || fgData.data.length === 0) {
+        console.warn('No FG items found. Please add FG items first.');
+      }
+      if (!rmData.success || rmData.data.length === 0) {
+        console.warn('No RM items found. Please add RM items first.');
+      }
+      if (!bomsData.success || bomsData.data.length === 0) {
+        console.warn('No BOMs found. Please add BOM entries first.');
+      }
     } catch (err: any) {
-      setError(err.message);
+      console.error('Error fetching data:', err);
+      setError(`Failed to load data: ${err.message}. Please refresh the page.`);
     } finally {
       setLoading(false);
     }
   };
 
   const fetchBOMsForFG = async (fgItemId: string) => {
-    const fgItem = fgItems.find((item) => item._id === fgItemId);
-    if (!fgItem) return;
-
-    const matchingBOMs = boms.filter(
-      (bom) => bom.fgSize === fgItem.size && bom.grade === fgItem.grade
-    );
-
-    if (matchingBOMs.length > 0) {
-      setSelectedBOM(matchingBOMs[0]);
-      setAvailableFinishSizes([]); // Clear when selecting FG first
-      
-      // Find matching RM item - MATCH BY SIZE ONLY (one RM can serve multiple FGs)
-      const rmItem = rmItems.find(
-        (item) => item.size === matchingBOMs[0].rmSize
-      );
-      
-      if (rmItem) {
-        setFormData((prev) => ({
-          ...prev,
-          originalSize: rmItem._id,
-          annealingCount: matchingBOMs[0].annealingMin,
-          drawPassCount: matchingBOMs[0].drawPassMin,
-        }));
-      } else {
-        setError(`BOM found, but RM item with size "${matchingBOMs[0].rmSize}" not found in Item Master.`);
+    try {
+      const fgItem = fgItems.find((item) => item._id === fgItemId);
+      if (!fgItem) {
+        console.error('FG item not found:', fgItemId);
+        return;
       }
-    } else {
-      setError(`No BOM found for FG: ${fgItem.size} (${fgItem.grade}). Please add a BOM entry first.`);
-      setSelectedBOM(null);
+
+      const matchingBOMs = boms.filter(
+        (bom) => bom.fgSize === fgItem.size && bom.grade === fgItem.grade
+      );
+
+      if (matchingBOMs.length > 0) {
+        setSelectedBOM(matchingBOMs[0]);
+        setAvailableFinishSizes([]); // Clear when selecting FG first
+        
+        // Find matching RM item - MATCH BY SIZE ONLY (one RM can serve multiple FGs)
+        const rmItem = rmItems.find(
+          (item) => item.size === matchingBOMs[0].rmSize
+        );
+        
+        if (rmItem) {
+          setFormData((prev) => ({
+            ...prev,
+            originalSize: rmItem._id,
+            annealingCount: matchingBOMs[0].annealingMin,
+            drawPassCount: matchingBOMs[0].drawPassMin,
+          }));
+        } else {
+          setError(`BOM found, but RM item with size "${matchingBOMs[0].rmSize}" not found in Item Master.`);
+        }
+      } else {
+        setError(`No BOM found for FG: ${fgItem.size} (${fgItem.grade}). Please add a BOM entry first.`);
+        setSelectedBOM(null);
+      }
+    } catch (err: any) {
+      console.error('Error in fetchBOMsForFG:', err);
+      setError(`Error loading BOM data: ${err.message}`);
     }
   };
 
   // Fetch all available finish sizes when RM is selected
   const fetchBOMsForRM = async (rmItemId: string) => {
-    const rmItem = rmItems.find((item) => item._id === rmItemId);
-    if (!rmItem) {
-      setAvailableFinishSizes([]);
-      return;
-    }
+    try {
+      const rmItem = rmItems.find((item) => item._id === rmItemId);
+      if (!rmItem) {
+        setAvailableFinishSizes([]);
+        console.error('RM item not found:', rmItemId);
+        return;
+      }
 
-    // Find ALL BOMs that use this RM size (one RM can produce multiple FG sizes)
-    const matchingBOMs = boms.filter(
-      (bom) => bom.rmSize === rmItem.size && (bom.status === 'Active' || !bom.status)
-    );
+      // Find ALL BOMs that use this RM size (one RM can produce multiple FG sizes)
+      const matchingBOMs = boms.filter(
+        (bom) => bom.rmSize === rmItem.size && (bom.status === 'Active' || !bom.status)
+      );
 
-    if (matchingBOMs.length > 0) {
-      // Store all available finish sizes for dropdown
-      setAvailableFinishSizes(matchingBOMs);
+      if (matchingBOMs.length > 0) {
+        // Store all available finish sizes for dropdown
+        setAvailableFinishSizes(matchingBOMs);
 
-      // If only one option, auto-select it
-      if (matchingBOMs.length === 1) {
-        const selectedBom = matchingBOMs[0];
-        setSelectedBOM(selectedBom);
-        
-        // Find the corresponding FG item
-        const fgItem = fgItems.find(
-          (item) => item.size === selectedBom.fgSize && item.grade === selectedBom.grade
-        );
-        
-        if (fgItem) {
+        // If only one option, auto-select it
+        if (matchingBOMs.length === 1) {
+          const selectedBom = matchingBOMs[0];
+          setSelectedBOM(selectedBom);
+          
+          // Find the corresponding FG item
+          const fgItem = fgItems.find(
+            (item) => item.size === selectedBom.fgSize && item.grade === selectedBom.grade
+          );
+          
+          if (fgItem) {
+            setFormData((prev) => ({
+              ...prev,
+              finishSize: fgItem._id,
+              annealingCount: selectedBom.annealingMin,
+              drawPassCount: selectedBom.drawPassMin,
+            }));
+          }
+        } else {
+          // Multiple options - clear finish size and let user choose
+          setSelectedBOM(null);
           setFormData((prev) => ({
             ...prev,
-            finishSize: fgItem._id,
-            annealingCount: selectedBom.annealingMin,
-            drawPassCount: selectedBom.drawPassMin,
+            finishSize: '',
+            annealingCount: 0,
+            drawPassCount: 0,
           }));
         }
       } else {
-        // Multiple options - clear finish size and let user choose
+        setError(`No BOM found for RM size: ${rmItem.size}. Please add a BOM entry first.`);
         setSelectedBOM(null);
-        setFormData((prev) => ({
-          ...prev,
-          finishSize: '',
-          annealingCount: 0,
-          drawPassCount: 0,
-        }));
+        setAvailableFinishSizes([]);
       }
-    } else {
-      setError(`No BOM found for RM size: ${rmItem.size}. Please add a BOM entry first.`);
-      setSelectedBOM(null);
+    } catch (err: any) {
+      console.error('Error in fetchBOMsForRM:', err);
+      setError(`Error loading BOM data: ${err.message}`);
       setAvailableFinishSizes([]);
     }
   };
@@ -315,6 +345,37 @@ export default function OutwardChallanPage() {
     e.preventDefault();
     setError('');
 
+    // Validation checks with better error messages
+    if (!formData.party) {
+      setError('Please select a party');
+      return;
+    }
+    
+    if (!formData.finishSize) {
+      setError('Please select a finish size (FG)');
+      return;
+    }
+    
+    if (!formData.originalSize) {
+      setError('Please select an original size (RM)');
+      return;
+    }
+    
+    if (!selectedBOM) {
+      setError('No BOM found for the selected sizes. Please add a BOM entry first.');
+      return;
+    }
+    
+    if (formData.quantity <= 0) {
+      setError('Please enter a valid quantity greater than 0');
+      return;
+    }
+    
+    if (formData.rate < 0) {
+      setError('Please enter a valid rate (cannot be negative)');
+      return;
+    }
+
     // Skip stock check for edit if quantity is same or less
     if (!editingChallan && formData.quantity > rmStock) {
       setError(`Insufficient RM stock. Available: ${rmStock}, Required: ${formData.quantity}`);
@@ -325,12 +386,18 @@ export default function OutwardChallanPage() {
       // Calculate charges for the submission
       const currentCharges = calculateCharges();
       
+      if (!currentCharges || currentCharges.total === 0) {
+        console.warn('Charge calculation resulted in zero total');
+      }
+      
       const challanData = {
         ...formData,
         annealingCharge: currentCharges.annealing,
         drawCharge: currentCharges.draw,
         totalAmount: currentCharges.total,
       };
+      
+      console.log('Submitting challan data:', challanData);
 
       let response;
       
@@ -351,6 +418,8 @@ export default function OutwardChallanPage() {
       }
 
       const data = await response.json();
+      
+      console.log('API Response:', data);
 
       if (data.success) {
         await fetchData();
@@ -360,10 +429,13 @@ export default function OutwardChallanPage() {
           : 'Outward Challan created successfully! Stock has been updated.'
         );
       } else {
-        setError(data.error);
+        const errorMsg = data.error || 'Failed to create/update challan';
+        console.error('API Error:', errorMsg);
+        setError(errorMsg);
       }
     } catch (err: any) {
-      setError(err.message);
+      console.error('Submission error:', err);
+      setError(err.message || 'An unexpected error occurred. Please try again.');
     }
   };
 

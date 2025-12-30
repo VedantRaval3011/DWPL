@@ -44,9 +44,17 @@ export default function ItemSelector<T extends BaseItem>({
 
   const selectedItem = items.find((item) => item._id === value);
 
-  const filteredItems = items.filter((item) =>
-    getSearchableText(item).toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Safe filtering with fallback
+  const filteredItems = items.filter((item) => {
+    try {
+      const searchText = getSearchableText(item);
+      if (!searchText) return false;
+      return searchText.toLowerCase().includes(searchQuery.toLowerCase());
+    } catch (error) {
+      console.error('Error in getSearchableText:', error);
+      return false;
+    }
+  });
 
   const handleSelect = (itemId: string) => {
     onChange(itemId);
@@ -74,8 +82,7 @@ export default function ItemSelector<T extends BaseItem>({
           opacity: disabled ? 0.5 : 1,
           cursor: disabled ? 'not-allowed' : 'pointer',
           padding: '0.5rem 0.75rem',
-          minHeight: '36px',
-          height: '36px',
+          minHeight: '38px',
         }}
         className={`
           input flex items-center justify-between
