@@ -53,7 +53,7 @@ MongoDB Atlas blocks connections from IP addresses that aren't whitelisted.
 
 ```bash
 # Should look like this:
-MONGODB_URI=mongodb+srv://username:password@cluster0.iqlhxn9.mongodb.net/dwpl?retryWrites=true&w=majority
+MONGODB_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/dwpl?retryWrites=true&w=majority
 ```
 
 **Common mistakes:**
@@ -123,7 +123,7 @@ Free tier clusters (M0) can pause after inactivity.
 ### Step 3: Verify Connection String
 ```
 1. Check .env.local file
-2. Ensure format: mongodb+srv://user:pass@cluster0.iqlhxn9.mongodb.net/dwpl
+2. Ensure format: mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/dwpl
 3. Restart dev server: npm run dev
 ```
 
