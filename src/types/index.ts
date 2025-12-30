@@ -94,6 +94,7 @@ export interface IOutwardChallan extends Document {
 
 export interface ITaxInvoice extends Document {
   invoiceNumber: string;
+  irnNumber?: string; // IRN number (optional)
   outwardChallan: string; // Outward Challan ID
   party: string; // Party ID
   finishSize: string;
@@ -104,10 +105,38 @@ export interface ITaxInvoice extends Document {
   rate: number;
   annealingCharge: number;
   drawCharge: number;
-  baseAmount: number;
-  gstPercentage: number; // from GST Master
-  gstAmount: number;
-  totalAmount: number;
+  
+  // Additional Invoice Details
+  poNumber?: string; // Purchase Order Number
+  paymentTerm?: string; // e.g., "0 Days"
+  supplierCode?: string; // Supplier Code
+  vehicleNumber?: string; // Vehicle No/LR No
+  eWayBillNo?: string; // E-Way Bill No
+  dispatchedThrough?: string; // e.g., "By Road"
+  
+  // Packing Details
+  packingType?: string; // e.g., "KGS", "NOS"
+  
+  // Amount Breakdown
+  baseAmount: number; // Material + Processing charges
+  transportCharges?: number; // Transport charges (default: 0)
+  assessableValue?: number; // Base + Transport (for GST calculation)
+  
+  // GST Breakdown
+  gstPercentage: number; // Total GST percentage
+  cgstPercentage?: number; // CGST percentage (e.g., 9%)
+  sgstPercentage?: number; // SGST percentage (e.g., 9%)
+  igstPercentage?: number; // IGST percentage (e.g., 0%)
+  cgstAmount?: number; // CGST amount
+  sgstAmount?: number; // SGST amount
+  igstAmount?: number; // IGST amount
+  gstAmount: number; // Total GST amount
+  
+  // TCS (Tax Collected at Source)
+  tcsPercentage?: number; // TCS percentage (default: 0%)
+  tcsAmount?: number; // TCS amount
+  
+  totalAmount: number; // Final amount including all taxes
   invoiceDate: Date;
   createdAt: Date;
   updatedAt: Date;

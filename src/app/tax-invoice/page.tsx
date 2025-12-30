@@ -6,7 +6,8 @@ import Card from '@/components/Card';
 import Loading from '@/components/Loading';
 import ErrorMessage from '@/components/ErrorMessage';
 import ItemSelector from '@/components/ItemSelector';
-import { Plus, X, Receipt, FileText } from 'lucide-react';
+import { Plus, X, Receipt, FileText, Download } from 'lucide-react';
+import { exportToPDF, generatePDFFilename } from '@/lib/pdfExport';
 
 interface OutwardChallan {
   _id: string;
@@ -26,21 +27,61 @@ interface OutwardChallan {
 interface TaxInvoice {
   _id: string;
   invoiceNumber: string;
+  irnNumber?: string;
   party: {
     partyName: string;
+    address: string;
+    gstNumber: string;
+    contactNumber: string;
   };
   finishSize: {
     size: string;
+    grade: string;
+    mill: string;
+    hsnCode: string;
   };
   originalSize: {
     size: string;
+    grade: string;
   };
+  annealingCount: number;
+  drawPassCount: number;
   quantity: number;
+  rate: number;
+  annealingCharge: number;
+  drawCharge: number;
+  
+  // Invoice details
+  poNumber?: string;
+  paymentTerm?: string;
+  supplierCode?: string;
+  vehicleNumber?: string;
+  eWayBillNo?: string;
+  dispatchedThrough?: string;
+  packingType?: string;
+  
+  // Amounts
   baseAmount: number;
+  transportCharges?: number;
+  assessableValue?: number;
+  
+  // GST
   gstPercentage: number;
+  cgstPercentage?: number;
+  sgstPercentage?: number;
+  igstPercentage?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
   gstAmount: number;
+  
+  // TCS
+  tcsPercentage?: number;
+  tcsAmount?: number;
+  
   totalAmount: number;
   invoiceDate: string;
+  createdAt: string;
 }
 
 export default function TaxInvoicePage() {
@@ -58,6 +99,7 @@ export default function TaxInvoicePage() {
 
   const fetchData = async () => {
     try {
+      console.log('Fetching tax invoices and outward challans...');
       const [invoicesRes, challansRes] = await Promise.all([
         fetch('/api/tax-invoice'),
         fetch('/api/outward-challan'),
@@ -68,18 +110,49 @@ export default function TaxInvoicePage() {
         challansRes.json(),
       ]);
 
-      if (invoicesData.success) setInvoices(invoicesData.data);
+      console.log('Tax Invoices API Response:', invoicesData);
+      console.log('Outward Challans API Response:', challansData);
+
+      if (invoicesData.success) {
+        console.log('Setting invoices:', invoicesData.data);
+        console.log('Number of invoices:', invoicesData.data.length);
+        setInvoices(invoicesData.data);
+        
+        // Show message if corrupted invoices were auto-deleted
+        if (invoicesData.message) {
+          console.log('ℹ️ Cleanup message:', invoicesData.message);
+          alert(`ℹ️ Cleanup Notice:\n\n${invoicesData.message}`);
+        }
+      } else {
+        console.error('Failed to fetch invoices:', invoicesData.error);
+        setError(invoicesData.error);
+      }
+      
       if (challansData.success) {
         // Filter out challans that already have invoices
+        // Note: outwardChallan is populated, so it's an object with _id
         const invoicedChallanIds = invoicesData.success
-          ? invoicesData.data.map((inv: any) => inv.outwardChallan)
+          ? invoicesData.data.map((inv: any) => {
+              // Handle both populated (object) and non-populated (string) cases
+              const challanId = typeof inv.outwardChallan === 'string' 
+                ? inv.outwardChallan 
+                : inv.outwardChallan?._id;
+              console.log('Invoice outwardChallan:', inv.outwardChallan, '-> ID:', challanId);
+              return challanId;
+            })
           : [];
+        console.log('Invoiced challan IDs:', invoicedChallanIds);
+        
         const availableChallans = challansData.data.filter(
           (ch: any) => !invoicedChallanIds.includes(ch._id)
         );
+        console.log('Available challans for invoicing:', availableChallans.length);
         setChallans(availableChallans);
+      } else {
+        console.error('Failed to fetch challans:', challansData.error);
       }
     } catch (err: any) {
+      console.error('Error fetching data:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -118,6 +191,203 @@ export default function TaxInvoicePage() {
     setSelectedChallan('');
     setInvoiceDate(new Date().toISOString().split('T')[0]);
     setShowForm(false);
+  };
+
+  const handleDirectPDFExport = async (invoice: TaxInvoice) => {
+    try {
+      // Create temporary hidden container
+      const tempContainer = document.createElement('div');
+      tempContainer.id = 'temp-invoice-print';
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.width = '210mm';
+      tempContainer.style.background = 'white';
+      document.body.appendChild(tempContainer);
+
+      // Generate 3 copies
+      const copies = ['Triplicate', 'Duplicate', 'Original For Recipient'];
+      let htmlContent = '';
+
+      copies.forEach((copyType, index) => {
+        const pageBreak = index < 2 ? 'page-break-after: always;' : '';
+        
+        htmlContent += `
+          <div style="${pageBreak} padding: 15px; font-family: Arial, sans-serif; font-size: 11px; color: #000;">
+            <!-- IRN and Copy Type -->
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+              <div style="font-size: 10px;">${invoice.irnNumber ? `IRN: ${invoice.irnNumber}` : ''}</div>
+              <div style="font-weight: bold; font-size: 12px;">(${copyType})</div>
+            </div>
+
+            <!-- Title -->
+            <div style="text-align: center; margin-bottom: 12px;">
+              <h2 style="margin: 0; font-size: 14px; font-weight: bold;">Tax Invoice</h2>
+            </div>
+
+            <!-- Company and Invoice Details -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 12px; border: 1px solid #000;">
+              <!-- Left: Company Details -->
+              <div style="border-right: 1px solid #000; padding: 10px;">
+                <p style="margin: 0 0 3px 0; font-weight: bold; font-size: 12px;">PINNACLE FASTENER</p>
+                <p style="margin: 2px 0; font-size: 10px;">Plot No. 1005/B1, Phase-III, G.I.D.C.,</p>
+                <p style="margin: 2px 0; font-size: 10px;">Wadhwancity, Surendranagar, Gujarat, India - 363035</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>GSTIN:</strong> 24AAQCP2416F1ZD</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>PAN No:</strong> AAQCP2416F</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>State:</strong> Gujarat</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>State Code:</strong> 24</p>
+              </div>
+
+              <!-- Right: Invoice Details -->
+              <div style="padding: 10px;">
+                <p style="margin: 2px 0; font-size: 10px;"><strong>INVOICE NO:</strong> ${invoice.invoiceNumber} <strong style="margin-left: 20px;">Date:</strong> ${new Date(invoice.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>P.O. No.:</strong> ${invoice.poNumber || 'checking invoice printing'} <strong>P.O. Date:</strong> ${new Date(invoice.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>Payment Term:</strong> ${invoice.paymentTerm || '0 Days'}</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>Supplier Code:</strong> ${invoice.supplierCode || '0'}</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>Vehicle No/LR No:</strong> ${invoice.vehicleNumber || 'EG13AW3140'} /</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>E-Way Bill No:</strong> ${invoice.eWayBillNo || ''}</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>Dispatched Through:</strong> ${invoice.dispatchedThrough || 'By Road'}</p>
+              </div>
+            </div>
+
+            <!-- Billed To and Shipped To -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 12px; border: 1px solid #000; border-top: none;">
+              <!-- Billed To -->
+              <div style="border-right: 1px solid #000; padding: 10px;">
+                <p style="margin: 0 0 5px 0; font-weight: bold; font-size: 10px;">Details of Receiver (Billed To)</p>
+                <p style="margin: 2px 0; font-weight: bold;">${invoice.party.partyName}</p>
+                <p style="margin: 2px 0; font-size: 10px;">${invoice.party.address}</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>GSTIN:</strong> ${invoice.party.gstNumber}</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>State Code:</strong> 24 Gujarat</p>
+              </div>
+
+              <!-- Shipped To -->
+              <div style="padding: 10px;">
+                <p style="margin: 0 0 5px 0; font-weight: bold; font-size: 10px;">Details of Consignee (Shipped To)</p>
+                <p style="margin: 2px 0; font-weight: bold;">${invoice.party.partyName}</p>
+                <p style="margin: 2px 0; font-size: 10px;">${invoice.party.address}</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>GSTIN:</strong> ${invoice.party.gstNumber}</p>
+                <p style="margin: 2px 0; font-size: 10px;"><strong>State Code:</strong> 24 Gujarat</p>
+              </div>
+            </div>
+
+            <!-- Item Table -->
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px;">
+              <thead>
+                <tr style="background: #f0f0f0;">
+                  <th style="border: 1px solid #000; padding: 6px; text-align: center; font-size: 10px;">Sr. No.</th>
+                  <th style="border: 1px solid #000; padding: 6px; text-align: left; font-size: 10px;">Description</th>
+                  <th style="border: 1px solid #000; padding: 6px; text-align: center; font-size: 10px;">HSN/SAC</th>
+                  <th style="border: 1px solid #000; padding: 6px; text-align: center; font-size: 10px;">No. & Type Of Packing</th>
+                  <th style="border: 1px solid #000; padding: 6px; text-align: center; font-size: 10px;">Total Qty. Nos./ Kgs</th>
+                  <th style="border: 1px solid #000; padding: 6px; text-align: center; font-size: 10px;">Rate Per Unit</th>
+                  <th style="border: 1px solid #000; padding: 6px; text-align: right; font-size: 10px;">Amount Rs.</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style="border: 1px solid #000; padding: 6px; text-align: center;">1</td>
+                  <td style="border: 1px solid #000; padding: 6px;">
+                    <div style="font-weight: bold;">${invoice.finishSize.size} - ${invoice.finishSize.grade}</div>
+                    <div style="font-size: 9px;">Item no 1</div>
+                  </td>
+                  <td style="border: 1px solid #000; padding: 6px; text-align: center;">${invoice.finishSize.hsnCode}</td>
+                  <td style="border: 1px solid #000; padding: 6px; text-align: center;">
+                    <div>${invoice.quantity.toFixed(0)}</div>
+                    <div style="font-size: 9px;">${invoice.packingType || 'KGS'}</div>
+                  </td>
+                  <td style="border: 1px solid #000; padding: 6px; text-align: center;">
+                    <div>${invoice.quantity.toFixed(0)}</div>
+                    <div style="font-size: 9px;">${invoice.packingType || 'KGS'}</div>
+                  </td>
+                  <td style="border: 1px solid #000; padding: 6px; text-align: center;">${invoice.rate.toFixed(2)}</td>
+                  <td style="border: 1px solid #000; padding: 6px; text-align: right; font-weight: bold;">${(invoice.quantity * invoice.rate).toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- GST Calculation Section -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 12px;">
+              <!-- Left: Amount in Words -->
+              <div style="border: 1px solid #000; padding: 10px; font-size: 10px;">
+                <p style="margin: 0 0 5px 0;">Rs ZERO Rupees And Zero Paise Only</p>
+                <p style="margin: 5px 0; font-weight: bold;">Net Total Rs ${invoice.totalAmount.toFixed(2)}</p>
+              </div>
+
+              <!-- Right: GST Breakdown -->
+              <div style="border: 1px solid #000; padding: 10px; font-size: 10px;">
+                <div style="display: flex; justify-content: space-between; margin: 2px 0;">
+                  <span>Transport Charges</span>
+                  <span>${(invoice.transportCharges || 0).toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin: 2px 0;">
+                  <span>Ass Value:</span>
+                  <span style="font-weight: bold;">${(invoice.assessableValue || invoice.baseAmount).toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin: 2px 0;">
+                  <span>CGST ${(invoice.cgstPercentage || 0).toFixed(2)}%:</span>
+                  <span>${(invoice.cgstAmount || 0).toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin: 2px 0;">
+                  <span>SGST ${(invoice.sgstPercentage || 0).toFixed(2)}%:</span>
+                  <span>${(invoice.sgstAmount || 0).toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin: 2px 0;">
+                  <span>IGST ${(invoice.igstPercentage || 0).toFixed(2)}%:</span>
+                  <span>${(invoice.igstAmount || 0).toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin: 2px 0;">
+                  <span>TCS ${(invoice.tcsPercentage || 0).toFixed(2)}%:</span>
+                  <span>${(invoice.tcsAmount || 0).toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin: 5px 0 0 0; padding-top: 5px; border-top: 1px solid #000; font-weight: bold;">
+                  <span>Net Payable:</span>
+                  <span>${invoice.totalAmount.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Terms & Conditions -->
+            <div style="border: 1px solid #000; padding: 10px; margin-bottom: 12px; font-size: 9px; line-height: 1.4;">
+              <p style="margin: 0;">I / we certify that our registration certificate under the GST Act, 2017 is in force on the date on which the supply of goods specified in this Tax Invoice is made by me/us & that the transaction of supply covered by this Tax Invoice had been effected by me/us & it shall be accounted for in the turnover of supplies while filing of return & the due tax, if any, payable on the supplies has been paid or shall be paid. Further certified that the particulars given above are true & correct & the amount indicated represents the prices actually charged & that there is no flow of additional consideration directly or indirectly from the buyer.</p>
+              <p style="margin: 5px 0 0 0;"><strong>Date & time of issue:</strong> ${new Date(invoice.createdAt).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</p>
+            </div>
+
+            <!-- Signature Section -->
+            <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 15px; margin-bottom: 12px;">
+              <div style="border: 1px solid #000; padding: 10px; text-align: center;">
+                <p style="margin: 0; font-size: 10px;">(Customer's Seal and Signature)</p>
+              </div>
+              <div style="border: 1px solid #000; padding: 10px; text-align: right;">
+                <p style="margin: 0; font-size: 10px;">For <strong>PINNACLE FASTENER</strong></p>
+                <div style="display: flex; justify-content: space-around; margin-top: 30px; font-size: 9px;">
+                  <span>Prepared By: Himesh Trivedi</span>
+                  <span>Verified By:</span>
+                  <span>Authorised Signatory</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="text-align: center; font-size: 9px;">
+              <p style="margin: 2px 0; font-weight: bold;">(SUBJECT TO SURENDRANAGAR JURISDICTION)</p>
+              <p style="margin: 2px 0; font-style: italic;">(This is Computer Generated Invoice)</p>
+            </div>
+          </div>
+        `;
+      });
+
+      tempContainer.innerHTML = htmlContent;
+
+      // Generate PDF
+      const filename = generatePDFFilename('Invoice', invoice.invoiceNumber, invoice.invoiceDate);
+      await exportToPDF('temp-invoice-print', filename);
+
+      // Clean up
+      document.body.removeChild(tempContainer);
+    } catch (error) {
+      console.error('Failed to export PDF:', error);
+      alert('Failed to export PDF. Please try again.');
+    }
   };
 
   if (loading) {
@@ -276,6 +546,7 @@ export default function TaxInvoicePage() {
                 <th>GST %</th>
                 <th>GST Amount</th>
                 <th>Total Amount</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -317,6 +588,16 @@ export default function TaxInvoicePage() {
                     </td>
                     <td className="font-bold text-green-600 text-lg">
                       ₹{invoice.totalAmount.toFixed(2)}
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => handleDirectPDFExport(invoice)}
+                        className="btn btn-primary text-xs py-1 px-3 flex items-center gap-1"
+                        title="Export as PDF (3 copies)"
+                      >
+                        <Download className="w-3 h-3" />
+                        Export PDF
+                      </button>
                     </td>
                   </tr>
                 ))

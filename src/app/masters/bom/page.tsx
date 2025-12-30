@@ -21,7 +21,7 @@ interface BOM {
 }
 
 interface BOMForm {
-  fgSize: string;
+  fgSizes: string; // Changed to support multiple comma-separated sizes
   rmSize: string;
   grade: string;
   annealingMin: number;
@@ -38,8 +38,9 @@ export default function BOMPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<BOMForm>({
-    fgSize: '',
+    fgSizes: '',
     rmSize: '',
     grade: '',
     annealingMin: 0,
@@ -83,32 +84,106 @@ export default function BOMPage() {
       return;
     }
 
+    // Parse multiple FG sizes (comma-separated)
+    const fgSizeList = formData.fgSizes
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    if (fgSizeList.length === 0) {
+      setError('Please enter at least one Finish Size');
+      return;
+    }
+
+    setIsSubmitting(true);
+
     try {
-      const url = editingId ? `/api/bom/${editingId}` : '/api/bom';
-      const method = editingId ? 'PUT' : 'POST';
+      if (editingId) {
+        // When editing, only update single entry
+        const response = await fetch(`/api/bom/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fgSize: fgSizeList[0], // Use first size when editing
+            rmSize: formData.rmSize,
+            grade: formData.grade,
+            annealingMin: formData.annealingMin,
+            annealingMax: formData.annealingMax,
+            drawPassMin: formData.drawPassMin,
+            drawPassMax: formData.drawPassMax,
+            status: formData.status,
+          }),
+        });
 
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        await fetchBOMs();
-        resetForm();
+        const data = await response.json();
+        if (data.success) {
+          await fetchBOMs();
+          resetForm();
+        } else {
+          setError(data.error);
+        }
       } else {
-        setError(data.error);
+        // When creating, create multiple BOMs
+        const results: string[] = [];
+        const autoCreatedFGs: string[] = [];
+        const errors: string[] = [];
+
+        for (const fgSize of fgSizeList) {
+          try {
+            const response = await fetch('/api/bom', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fgSize,
+                rmSize: formData.rmSize,
+                grade: formData.grade,
+                annealingMin: formData.annealingMin,
+                annealingMax: formData.annealingMax,
+                drawPassMin: formData.drawPassMin,
+                drawPassMax: formData.drawPassMax,
+                status: formData.status,
+                autoCreateFG: true, // Enable auto-creation of FG items
+              }),
+            });
+
+            const data = await response.json();
+            if (data.success) {
+              results.push(fgSize);
+              // Check if FG item was auto-created
+              if (data.message && data.message.includes('auto-created')) {
+                autoCreatedFGs.push(fgSize);
+              }
+            } else {
+              errors.push(`${fgSize}: ${data.error}`);
+            }
+          } catch (err: any) {
+            errors.push(`${fgSize}: ${err.message}`);
+          }
+        }
+
+        await fetchBOMs();
+
+        if (errors.length > 0) {
+          setError(`Created ${results.length} BOM(s). Errors: ${errors.join('; ')}`);
+        } else {
+          let successMsg = `✅ Successfully created ${results.length} BOM entries for RM: ${formData.rmSize}`;
+          if (autoCreatedFGs.length > 0) {
+            successMsg += `\n\n📦 Auto-created ${autoCreatedFGs.length} FG items in Item Master:\n${autoCreatedFGs.join(', ')}`;
+          }
+          alert(successMsg);
+          resetForm();
+        }
       }
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleEdit = (bom: BOM) => {
     setFormData({
-      fgSize: bom.fgSize,
+      fgSizes: bom.fgSize, // When editing, show single size
       rmSize: bom.rmSize,
       grade: bom.grade,
       annealingMin: bom.annealingMin,
@@ -143,7 +218,7 @@ export default function BOMPage() {
 
   const resetForm = () => {
     setFormData({
-      fgSize: '',
+      fgSizes: '',
       rmSize: '',
       grade: '',
       annealingMin: 0,
@@ -205,16 +280,23 @@ export default function BOMPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="label">Finish Size (FG) *</label>
+                <label className="label">
+                  {editingId ? 'Finish Size (FG) *' : 'Finish Sizes (FG) - Multiple allowed *'}
+                </label>
                 <input
                   type="text"
                   className="input"
-                  value={formData.fgSize}
-                  onChange={(e) => setFormData({ ...formData, fgSize: e.target.value })}
-                  placeholder="e.g., 6mm"
+                  value={formData.fgSizes}
+                  onChange={(e) => setFormData({ ...formData, fgSizes: e.target.value })}
+                  placeholder={editingId ? 'e.g., 6mm' : 'e.g., 6mm, 5.5mm, 5mm'}
                   required
                 />
-                <p className="text-xs text-slate-500 mt-1">Must exist in Item Master as FG</p>
+                <p className="text-xs mt-1">
+                  {editingId 
+                    ? <span className="text-slate-500">Must exist in Item Master as FG</span>
+                    : <span className="text-green-600">💡 Enter multiple sizes (e.g., 13.55, 12.50, 11.00). <strong>Missing FG items will be auto-created!</strong></span>
+                  }
+                </p>
               </div>
 
               <div>
@@ -227,7 +309,9 @@ export default function BOMPage() {
                   placeholder="e.g., 8mm"
                   required
                 />
-                <p className="text-xs text-slate-500 mt-1">Must exist in Item Master as RM</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Must exist in Item Master as RM. <span className="text-blue-600">Multiple FG sizes can use the same RM.</span>
+                </p>
               </div>
 
               <div>

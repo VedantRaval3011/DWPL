@@ -6,7 +6,7 @@ import Card from '@/components/Card';
 import Loading from '@/components/Loading';
 import ErrorMessage from '@/components/ErrorMessage';
 import ItemSelector from '@/components/ItemSelector';
-import { Plus, X, Send, AlertCircle, Printer, Eye } from 'lucide-react';
+import { Plus, X, Send, AlertCircle, Printer, Eye, Edit, Trash2 } from 'lucide-react';
 
 interface Party {
   _id: string;
@@ -31,6 +31,7 @@ interface BOM {
   annealingMax: number;
   drawPassMin: number;
   drawPassMax: number;
+  status?: 'Active' | 'Inactive';
 }
 
 interface OutwardChallan {
@@ -95,8 +96,17 @@ export default function OutwardChallanPage() {
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [selectedBOM, setSelectedBOM] = useState<BOM | null>(null);
   const [rmStock, setRmStock] = useState<number>(0);
+  // Available finish sizes when RM is selected (for dropdown)
+  const [availableFinishSizes, setAvailableFinishSizes] = useState<BOM[]>([]);
   const [printChallan, setPrintChallan] = useState<OutwardChallan | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  // Track which field was changed last to prevent infinite loops
+  const [lastChangedField, setLastChangedField] = useState<'fg' | 'rm' | null>(null);
+  // Edit and Delete state
+  const [editingChallan, setEditingChallan] = useState<OutwardChallan | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [challanToDelete, setChallanToDelete] = useState<OutwardChallan | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const [formData, setFormData] = useState<ChallanForm>({
     party: '',
@@ -120,14 +130,30 @@ export default function OutwardChallanPage() {
     }
   }, [formData.party, parties]);
 
+  // Effect for FG selection - only runs when FG was the last changed field
   useEffect(() => {
-    if (formData.finishSize) {
+    if (formData.finishSize && lastChangedField === 'fg') {
       fetchBOMsForFG(formData.finishSize);
-    } else {
+    } else if (!formData.finishSize) {
       setSelectedBOM(null);
-      setFormData((prev) => ({ ...prev, originalSize: '', annealingCount: 0, drawPassCount: 0 }));
+      if (lastChangedField === 'fg') {
+        setFormData((prev) => ({ ...prev, originalSize: '', annealingCount: 0, drawPassCount: 0 }));
+      }
     }
-  }, [formData.finishSize]);
+  }, [formData.finishSize, lastChangedField]);
+
+  // Effect for RM selection - only runs when RM was the last changed field
+  useEffect(() => {
+    if (formData.originalSize && lastChangedField === 'rm') {
+      fetchBOMsForRM(formData.originalSize);
+    } else if (!formData.originalSize) {
+      if (lastChangedField === 'rm') {
+        setSelectedBOM(null);
+        setAvailableFinishSizes([]);
+        setFormData((prev) => ({ ...prev, finishSize: '', annealingCount: 0, drawPassCount: 0 }));
+      }
+    }
+  }, [formData.originalSize, lastChangedField]);
 
   useEffect(() => {
     if (formData.originalSize) {
@@ -175,10 +201,11 @@ export default function OutwardChallanPage() {
 
     if (matchingBOMs.length > 0) {
       setSelectedBOM(matchingBOMs[0]);
+      setAvailableFinishSizes([]); // Clear when selecting FG first
       
-      // Find matching RM item
+      // Find matching RM item - MATCH BY SIZE ONLY (one RM can serve multiple FGs)
       const rmItem = rmItems.find(
-        (item) => item.size === matchingBOMs[0].rmSize && item.grade === matchingBOMs[0].grade
+        (item) => item.size === matchingBOMs[0].rmSize
       );
       
       if (rmItem) {
@@ -188,10 +215,85 @@ export default function OutwardChallanPage() {
           annealingCount: matchingBOMs[0].annealingMin,
           drawPassCount: matchingBOMs[0].drawPassMin,
         }));
+      } else {
+        setError(`BOM found, but RM item with size "${matchingBOMs[0].rmSize}" not found in Item Master.`);
       }
     } else {
-      setError(`No BOM found for FG: ${fgItem.size} (${fgItem.grade})`);
+      setError(`No BOM found for FG: ${fgItem.size} (${fgItem.grade}). Please add a BOM entry first.`);
       setSelectedBOM(null);
+    }
+  };
+
+  // Fetch all available finish sizes when RM is selected
+  const fetchBOMsForRM = async (rmItemId: string) => {
+    const rmItem = rmItems.find((item) => item._id === rmItemId);
+    if (!rmItem) {
+      setAvailableFinishSizes([]);
+      return;
+    }
+
+    // Find ALL BOMs that use this RM size (one RM can produce multiple FG sizes)
+    const matchingBOMs = boms.filter(
+      (bom) => bom.rmSize === rmItem.size && (bom.status === 'Active' || !bom.status)
+    );
+
+    if (matchingBOMs.length > 0) {
+      // Store all available finish sizes for dropdown
+      setAvailableFinishSizes(matchingBOMs);
+
+      // If only one option, auto-select it
+      if (matchingBOMs.length === 1) {
+        const selectedBom = matchingBOMs[0];
+        setSelectedBOM(selectedBom);
+        
+        // Find the corresponding FG item
+        const fgItem = fgItems.find(
+          (item) => item.size === selectedBom.fgSize && item.grade === selectedBom.grade
+        );
+        
+        if (fgItem) {
+          setFormData((prev) => ({
+            ...prev,
+            finishSize: fgItem._id,
+            annealingCount: selectedBom.annealingMin,
+            drawPassCount: selectedBom.drawPassMin,
+          }));
+        }
+      } else {
+        // Multiple options - clear finish size and let user choose
+        setSelectedBOM(null);
+        setFormData((prev) => ({
+          ...prev,
+          finishSize: '',
+          annealingCount: 0,
+          drawPassCount: 0,
+        }));
+      }
+    } else {
+      setError(`No BOM found for RM size: ${rmItem.size}. Please add a BOM entry first.`);
+      setSelectedBOM(null);
+      setAvailableFinishSizes([]);
+    }
+  };
+
+  // Handle finish size selection from the available options dropdown
+  const handleFinishSizeFromRM = (fgItemId: string) => {
+    const fgItem = fgItems.find((item) => item._id === fgItemId);
+    if (!fgItem) return;
+
+    // Find the matching BOM for this FG
+    const matchingBOM = availableFinishSizes.find(
+      (bom) => bom.fgSize === fgItem.size && bom.grade === fgItem.grade
+    );
+
+    if (matchingBOM) {
+      setSelectedBOM(matchingBOM);
+      setFormData((prev) => ({
+        ...prev,
+        finishSize: fgItemId,
+        annealingCount: matchingBOM.annealingMin,
+        drawPassCount: matchingBOM.drawPassMin,
+      }));
     }
   };
 
@@ -213,24 +315,50 @@ export default function OutwardChallanPage() {
     e.preventDefault();
     setError('');
 
-    if (formData.quantity > rmStock) {
+    // Skip stock check for edit if quantity is same or less
+    if (!editingChallan && formData.quantity > rmStock) {
       setError(`Insufficient RM stock. Available: ${rmStock}, Required: ${formData.quantity}`);
       return;
     }
 
     try {
-      const response = await fetch('/api/outward-challan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+      // Calculate charges for the submission
+      const currentCharges = calculateCharges();
+      
+      const challanData = {
+        ...formData,
+        annealingCharge: currentCharges.annealing,
+        drawCharge: currentCharges.draw,
+        totalAmount: currentCharges.total,
+      };
+
+      let response;
+      
+      if (editingChallan) {
+        // Update existing challan
+        response = await fetch(`/api/outward-challan/${editingChallan._id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(challanData),
+        });
+      } else {
+        // Create new challan
+        response = await fetch('/api/outward-challan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(challanData),
+        });
+      }
 
       const data = await response.json();
 
       if (data.success) {
         await fetchData();
         resetForm();
-        alert('Outward Challan created successfully! Stock has been updated.');
+        alert(editingChallan 
+          ? 'Outward Challan updated successfully!' 
+          : 'Outward Challan created successfully! Stock has been updated.'
+        );
       } else {
         setError(data.error);
       }
@@ -253,7 +381,62 @@ export default function OutwardChallanPage() {
     setSelectedParty(null);
     setSelectedBOM(null);
     setRmStock(0);
+    setAvailableFinishSizes([]);
+    setLastChangedField(null);
     setShowForm(false);
+    setEditingChallan(null);
+  };
+
+  // Handle Edit - populate form with challan data
+  const handleEdit = (challan: OutwardChallan) => {
+    setEditingChallan(challan);
+    setFormData({
+      party: challan.party._id,
+      finishSize: challan.finishSize._id,
+      originalSize: challan.originalSize._id,
+      annealingCount: challan.annealingCount,
+      drawPassCount: challan.drawPassCount,
+      quantity: challan.quantity,
+      rate: challan.rate,
+      challanDate: new Date(challan.challanDate).toISOString().split('T')[0],
+    });
+    setSelectedParty(parties.find(p => p._id === challan.party._id) || null);
+    setShowForm(true);
+    // Scroll to form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Handle Delete confirmation
+  const handleDeleteClick = (challan: OutwardChallan) => {
+    setChallanToDelete(challan);
+    setShowDeleteConfirm(true);
+  };
+
+  // Confirm and delete challan
+  const confirmDelete = async () => {
+    if (!challanToDelete) return;
+    
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/outward-challan/${challanToDelete._id}`, {
+        method: 'DELETE',
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        await fetchData();
+        setShowDeleteConfirm(false);
+        setChallanToDelete(null);
+        alert('Challan deleted successfully!');
+      } else {
+        setError(data.error || 'Failed to delete challan');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred while deleting');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const calculateCharges = () => {
@@ -298,7 +481,7 @@ export default function OutwardChallanPage() {
         <Card className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-              Create Outward Challan
+              {editingChallan ? `Edit Challan - ${editingChallan.challanNumber}` : 'Create Outward Challan'}
             </h2>
             <button onClick={resetForm} className="text-slate-400 hover:text-slate-600">
               <X className="w-5 h-5" />
@@ -353,16 +536,103 @@ export default function OutwardChallanPage() {
             {/* FG and RM Selection */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4">
               <h3 className="font-semibold text-blue-900">Size Conversion (BOM-Driven)</h3>
+              <p className="text-sm text-blue-700">
+                {availableFinishSizes.length > 1 
+                  ? `📋 ${availableFinishSizes.length} finish sizes available for the selected RM. Please select one below.`
+                  : 'Select either Finish Size or Original Size - the other will be auto-filled from BOM'
+                }
+              </p>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Show different FG selector based on flow */}
+                {availableFinishSizes.length > 1 ? (
+                  // When RM selected first with multiple FG options - show filtered dropdown
+                  <div>
+                    <label className="label">Finish Size (FG) - Select from available options *</label>
+                    <select
+                      className="input"
+                      value={formData.finishSize}
+                      onChange={(e) => handleFinishSizeFromRM(e.target.value)}
+                      required
+                    >
+                      <option value="">-- Select Finish Size --</option>
+                      {availableFinishSizes.map((bom) => {
+                        const fgItem = fgItems.find(
+                          (item) => item.size === bom.fgSize && item.grade === bom.grade
+                        );
+                        return fgItem ? (
+                          <option key={fgItem._id} value={fgItem._id}>
+                            {fgItem.size} - {fgItem.grade} ({fgItem.mill})
+                          </option>
+                        ) : (
+                          <option key={bom._id} value="" disabled>
+                            {bom.fgSize} - {bom.grade} (Not in Item Master)
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Available finish sizes for RM: {rmItems.find(r => r._id === formData.originalSize)?.size || 'N/A'}
+                    </p>
+                  </div>
+                ) : (
+                  // Normal flow - show full FG selector
+                  <ItemSelector
+                    label="Finish Size (FG)"
+                    value={formData.finishSize}
+                    onChange={(value) => {
+                      setLastChangedField('fg');
+                      setAvailableFinishSizes([]);
+                      setFormData({ ...formData, finishSize: value });
+                    }}
+                    items={fgItems}
+                    placeholder="Select FG Size"
+                    required
+                    helperText="Select finish size - Original size will be auto-filled from BOM"
+                    renderSelected={(item) => (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium" style={{ color: 'var(--foreground)' }}>
+                          {item.size}
+                        </span>
+                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                          {item.grade} ({item.mill})
+                        </span>
+                      </div>
+                    )}
+                    renderOption={(item) => (
+                      <div>
+                        <div className="font-medium" style={{ color: 'var(--foreground)' }}>
+                          {item.size} - {item.grade}
+                        </div>
+                        <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                          Mill: {item.mill}
+                        </div>
+                      </div>
+                    )}
+                    getSearchableText={(item) => 
+                      `${item.size} ${item.grade} ${item.mill}`
+                    }
+                  />
+                )}
+
+                {/* RM Selection - now editable */}
                 <ItemSelector
-                  label="Finish Size (FG)"
-                  value={formData.finishSize}
-                  onChange={(value) => setFormData({ ...formData, finishSize: value })}
-                  items={fgItems}
-                  placeholder="Select FG Size"
+                  label="Original Size (RM)"
+                  value={formData.originalSize}
+                  onChange={(value) => {
+                    setLastChangedField('rm');
+                    setFormData({ ...formData, originalSize: value });
+                  }}
+                  items={rmItems}
+                  placeholder="Select RM Size"
                   required
-                  helperText="Select the finished goods size"
+                  helperText={
+                    rmStock > 0
+                      ? `✓ Available Stock: ${rmStock.toFixed(2)} units`
+                      : formData.originalSize && rmStock === 0
+                      ? '⚠ No stock available! Please create a GRN first.'
+                      : 'Select original size to see available finish sizes'
+                  }
                   renderSelected={(item) => (
                     <div className="flex items-center gap-2">
                       <span className="font-medium" style={{ color: 'var(--foreground)' }}>
@@ -387,33 +657,30 @@ export default function OutwardChallanPage() {
                     `${item.size} ${item.grade} ${item.mill}`
                   }
                 />
-
-                <div>
-                  <label className="label">Original Size (RM) - Auto-fetched from BOM</label>
-                  <input
-                    type="text"
-                    className="input bg-slate-100"
-                    value={
-                      formData.originalSize
-                        ? rmItems.find((i) => i._id === formData.originalSize)?.size || ''
-                        : ''
-                    }
-                    disabled
-                    placeholder="Will be auto-filled based on BOM"
-                  />
-                  {rmStock > 0 && (
-                    <p className="text-xs text-green-600 mt-1">
-                      Available Stock: {rmStock.toFixed(2)} units
-                    </p>
-                  )}
-                  {rmStock === 0 && formData.originalSize && (
-                    <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" />
-                      No stock available!
-                    </p>
-                  )}
-                </div>
               </div>
+
+              {/* Show available finish sizes summary when RM is selected with multiple options */}
+              {availableFinishSizes.length > 1 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-2">
+                  <p className="text-sm text-amber-800 font-medium mb-2">
+                    📊 Available Finish Sizes for this RM:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {availableFinishSizes.map((bom) => (
+                      <span 
+                        key={bom._id} 
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          fgItems.find(fg => fg.size === bom.fgSize && fg.grade === bom.grade)?._id === formData.finishSize
+                            ? 'bg-green-100 text-green-800 border border-green-300'
+                            : 'bg-white text-amber-800 border border-amber-200'
+                        }`}
+                      >
+                        {bom.fgSize} ({bom.grade})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Process Counts */}
@@ -504,35 +771,61 @@ export default function OutwardChallanPage() {
               </div>
             </div>
 
-            {/* Charge Breakdown */}
+            {/* Charge Breakdown - Professional ERP Style */}
             {selectedParty && formData.quantity > 0 && (
-              <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 space-y-2">
-                <h3 className="font-semibold text-slate-900 dark:text-white mb-3">
-                  Charge Breakdown
-                </h3>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <span className="text-slate-600">Material Cost:</span>
-                  <span className="font-semibold text-right">₹{charges.material.toFixed(2)}</span>
+              <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-4 py-3 border-b border-slate-200">
+                  <h3 className="font-semibold text-slate-800 text-sm uppercase tracking-wide flex items-center gap-2">
+                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                    Charge Breakdown
+                  </h3>
+                </div>
+                
+                {/* Body */}
+                <div className="bg-white p-4">
+                  <div className="space-y-3">
+                    {/* Line Items */}
+                    <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-200">
+                      <span className="text-slate-600 text-sm">Material Cost</span>
+                      <span className="font-medium text-slate-800">₹{charges.material.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    
+                    <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-200">
+                      <span className="text-slate-600 text-sm">
+                        Annealing Charge 
+                        <span className="text-xs text-slate-400 ml-1">({formData.annealingCount} × ₹{selectedParty.annealingCharge})</span>
+                      </span>
+                      <span className="font-medium text-slate-800">₹{charges.annealing.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    
+                    <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-200">
+                      <span className="text-slate-600 text-sm">
+                        Draw Charge
+                        <span className="text-xs text-slate-400 ml-1">({formData.drawPassCount} × ₹{selectedParty.drawCharge})</span>
+                      </span>
+                      <span className="font-medium text-slate-800">₹{charges.draw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
                   
-                  <span className="text-slate-600">Annealing Charge:</span>
-                  <span className="font-semibold text-right">₹{charges.annealing.toFixed(2)}</span>
-                  
-                  <span className="text-slate-600">Draw Charge:</span>
-                  <span className="font-semibold text-right">₹{charges.draw.toFixed(2)}</span>
-                  
-                  <span className="text-lg font-bold text-slate-900 dark:text-white border-t pt-2">
-                    Total Amount:
-                  </span>
-                  <span className="text-lg font-bold text-blue-600 border-t pt-2 text-right">
-                    ₹{charges.total.toFixed(2)}
-                  </span>
+                  {/* Total */}
+                  <div className="mt-4 pt-4 border-t-2 border-slate-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-base font-bold text-slate-800">Total Amount</span>
+                      <span className="text-xl font-bold text-blue-600">
+                        ₹{charges.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
 
             <div className="flex gap-3">
               <button type="submit" className="btn btn-primary" disabled={!selectedBOM}>
-                Create Challan
+                {editingChallan ? 'Update Challan' : 'Create Challan'}
               </button>
               <button type="button" onClick={resetForm} className="btn btn-outline">
                 Cancel
@@ -595,17 +888,30 @@ export default function OutwardChallanPage() {
                       ₹{challan.totalAmount.toFixed(2)}
                     </td>
                     <td>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleEdit(challan)}
+                          className="p-1.5 rounded-md text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="Edit Challan"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(challan)}
+                          className="p-1.5 rounded-md text-red-600 hover:bg-red-50 transition-colors"
+                          title="Delete Challan"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => {
                             setPrintChallan(challan);
                             setShowPrintModal(true);
                           }}
-                          className="btn btn-outline text-xs py-1 px-2"
-                          title="View & Print Challan"
+                          className="p-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition-colors"
+                          title="Print Challan"
                         >
                           <Printer className="w-4 h-4" />
-                          Print
                         </button>
                       </div>
                     </td>
@@ -775,6 +1081,66 @@ export default function OutwardChallanPage() {
                 <p>This is a computer generated challan. No signature is required for digital copies.</p>
                 <p className="mt-1">Thank you for your business!</p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && challanToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Delete Challan</h3>
+                <p className="text-sm text-slate-500">This action cannot be undone</p>
+              </div>
+            </div>
+            
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+              <p className="text-sm text-red-800 mb-2">
+                <strong>Warning:</strong> Deleting this challan will:
+              </p>
+              <ul className="text-sm text-red-700 list-disc list-inside space-y-1">
+                <li>Restore {challanToDelete.quantity.toFixed(2)} units to RM stock</li>
+                <li>Remove {challanToDelete.quantity.toFixed(2)} units from FG stock</li>
+                <li>Permanently delete the challan record</li>
+              </ul>
+            </div>
+            
+            <div className="bg-slate-50 rounded-lg p-3 mb-4">
+              <p className="text-sm">
+                <strong>Challan:</strong> {challanToDelete.challanNumber}
+              </p>
+              <p className="text-sm">
+                <strong>Party:</strong> {challanToDelete.party.partyName}
+              </p>
+              <p className="text-sm">
+                <strong>Amount:</strong> ₹{challanToDelete.totalAmount.toFixed(2)}
+              </p>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={confirmDelete}
+                disabled={isDeleting}
+                className="flex-1 btn bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Challan'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setChallanToDelete(null);
+                }}
+                disabled={isDeleting}
+                className="flex-1 btn btn-outline"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>

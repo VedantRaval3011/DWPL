@@ -6,11 +6,14 @@ import Card from '@/components/Card';
 import Loading from '@/components/Loading';
 import ErrorMessage from '@/components/ErrorMessage';
 import ItemSelector from '@/components/ItemSelector';
-import { Plus, X, FileText } from 'lucide-react';
+import { Plus, X, FileText, Download } from 'lucide-react';
+import { exportToPDF, generatePDFFilename } from '@/lib/pdfExport';
 
 interface Party {
   _id: string;
   partyName: string;
+  address?: string;
+  gstNumber?: string;
 }
 
 interface Item {
@@ -26,6 +29,8 @@ interface GRN {
   sendingParty: {
     _id: string;
     partyName: string;
+    address?: string;
+    gstNumber?: string;
   };
   partyChallanNumber: string;
   rmSize: {
@@ -76,6 +81,7 @@ export default function GRNPage() {
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [valueUpdated, setValueUpdated] = useState(false);
+  const [selectedGRN, setSelectedGRN] = useState<GRN | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -83,30 +89,30 @@ export default function GRNPage() {
 
   useEffect(() => {
     // Trigger animation when total value changes
-    if (formData.quantity && formData.rate) {
+    if (formData.quantity || formData.rate) {
       setValueUpdated(true);
-      const timer = setTimeout(() => setValueUpdated(false), 600);
+      const timer = setTimeout(() => setValueUpdated(false), 300);
       return () => clearTimeout(timer);
     }
   }, [formData.quantity, formData.rate]);
 
   const fetchData = async () => {
     try {
-      const [grnsRes, partiesRes, itemsRes] = await Promise.all([
+      const [grnsRes, partiesRes, rmRes] = await Promise.all([
         fetch('/api/grn'),
         fetch('/api/party-master'),
         fetch('/api/item-master?category=RM'),
       ]);
 
-      const [grnsData, partiesData, itemsData] = await Promise.all([
+      const [grnsData, partiesData, rmData] = await Promise.all([
         grnsRes.json(),
         partiesRes.json(),
-        itemsRes.json(),
+        rmRes.json(),
       ]);
 
       if (grnsData.success) setGrns(grnsData.data);
       if (partiesData.success) setParties(partiesData.data);
-      if (itemsData.success) setRmItems(itemsData.data);
+      if (rmData.success) setRmItems(rmData.data);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -117,31 +123,16 @@ export default function GRNPage() {
   const validateForm = (): boolean => {
     const errors: FormErrors = {};
 
-    if (!formData.sendingParty) {
-      errors.sendingParty = 'Sending Party is required';
-    }
-
-    if (!formData.partyChallanNumber.trim()) {
-      errors.partyChallanNumber = 'Party Challan Number is required';
-    }
-
-    if (!formData.rmSize) {
-      errors.rmSize = 'RM Size is required';
-    }
-
-    if (!formData.grnDate) {
-      errors.grnDate = 'GRN Date is required';
-    }
-
-    const quantity = parseFloat(formData.quantity);
-    if (!formData.quantity || isNaN(quantity) || quantity <= 0) {
+    if (!formData.sendingParty) errors.sendingParty = 'Please select a sending party';
+    if (!formData.partyChallanNumber.trim()) errors.partyChallanNumber = 'Challan number is required';
+    if (!formData.rmSize) errors.rmSize = 'Please select RM size';
+    if (!formData.quantity || parseFloat(formData.quantity) <= 0) {
       errors.quantity = 'Quantity must be greater than 0';
     }
-
-    const rate = parseFloat(formData.rate);
-    if (!formData.rate || isNaN(rate) || rate <= 0) {
+    if (!formData.rate || parseFloat(formData.rate) <= 0) {
       errors.rate = 'Rate must be greater than 0';
     }
+    if (!formData.grnDate) errors.grnDate = 'GRN date is required';
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -162,16 +153,19 @@ export default function GRNPage() {
 
   const confirmAndSubmit = async () => {
     try {
-      const submitData = {
-        ...formData,
-        quantity: parseFloat(formData.quantity),
-        rate: parseFloat(formData.rate),
-      };
+      const quantity = parseFloat(formData.quantity);
+      const rate = parseFloat(formData.rate);
+      const totalValue = quantity * rate;
 
       const response = await fetch('/api/grn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submitData),
+        body: JSON.stringify({
+          ...formData,
+          quantity,
+          rate,
+          totalValue,
+        }),
       });
 
       const data = await response.json();
@@ -209,6 +203,112 @@ export default function GRNPage() {
     const quantity = parseFloat(formData.quantity) || 0;
     const rate = parseFloat(formData.rate) || 0;
     return (quantity * rate).toFixed(2);
+  };
+
+  const handleDirectPDFExport = async (grn: GRN) => {
+    try {
+      // Create a temporary container
+      const tempContainer = document.createElement('div');
+      tempContainer.id = 'temp-grn-print';
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.top = '0';
+      document.body.appendChild(tempContainer);
+
+      // Render the GRN content
+      tempContainer.innerHTML = `
+        <div style="background: white; padding: 2rem; width: 210mm;">
+          <!-- Company Header -->
+          <div style="text-align: center; border-bottom: 2px solid #1e293b; padding-bottom: 1rem; margin-bottom: 2rem;">
+            <h1 style="font-size: 2rem; font-weight: bold; color: #1e293b; margin: 0;">DWPL</h1>
+            <p style="font-size: 0.875rem; color: #64748b; margin: 0.25rem 0 0 0;">Manufacturing Management System</p>
+            <h2 style="font-size: 1.25rem; font-weight: 600; color: #475569; margin: 1rem 0 0 0;">GOODS RECEIPT NOTE</h2>
+          </div>
+
+          <!-- GRN Details -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+            <div>
+              <p style="font-size: 0.875rem; color: #64748b; margin-bottom: 0.25rem;">GRN Date:</p>
+              <p style="font-weight: 600; margin: 0;">${new Date(grn.grnDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            </div>
+            <div>
+              <p style="font-size: 0.875rem; color: #64748b; margin-bottom: 0.25rem;">Challan Number:</p>
+              <p style="font-weight: 600; font-family: monospace; margin: 0;">${grn.partyChallanNumber}</p>
+            </div>
+          </div>
+
+          <!-- Party Details -->
+          <div style="margin-bottom: 2rem;">
+            <h3 style="font-size: 1.125rem; font-weight: 600; color: #1e293b; margin-bottom: 0.75rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.5rem;">Sending Party Details</h3>
+            <div style="background: #f8fafc; padding: 1rem; border-radius: 0.5rem;">
+              <p style="font-weight: 600; font-size: 1.125rem; margin-bottom: 0.5rem;">${grn.sendingParty.partyName}</p>
+              ${grn.sendingParty.address ? `<p style="font-size: 0.875rem; color: #64748b; margin-bottom: 0.25rem;">${grn.sendingParty.address}</p>` : ''}
+              ${grn.sendingParty.gstNumber ? `<p style="font-size: 0.875rem; color: #64748b; margin: 0;"><span style="font-weight: 500;">GST:</span> ${grn.sendingParty.gstNumber}</p>` : ''}
+            </div>
+          </div>
+
+          <!-- Material Details -->
+          <div style="margin-bottom: 2rem;">
+            <h3 style="font-size: 1.125rem; font-weight: 600; color: #1e293b; margin-bottom: 0.75rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.5rem;">Material Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="background: #f1f5f9;">
+                  <th style="border: 1px solid #cbd5e1; padding: 0.75rem; text-align: left;">Description</th>
+                  <th style="border: 1px solid #cbd5e1; padding: 0.75rem; text-align: right;">Quantity</th>
+                  <th style="border: 1px solid #cbd5e1; padding: 0.75rem; text-align: right;">Rate</th>
+                  <th style="border: 1px solid #cbd5e1; padding: 0.75rem; text-align: right;">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style="border: 1px solid #cbd5e1; padding: 0.75rem;">
+                    <p style="font-weight: 600; margin: 0 0 0.25rem 0;">${grn.rmSize.size} - ${grn.rmSize.grade}</p>
+                    <p style="font-size: 0.875rem; color: #64748b; margin: 0;">Mill: ${grn.rmSize.mill}</p>
+                  </td>
+                  <td style="border: 1px solid #cbd5e1; padding: 0.75rem; text-align: right; font-weight: 600;">${grn.quantity.toFixed(2)}</td>
+                  <td style="border: 1px solid #cbd5e1; padding: 0.75rem; text-align: right;">₹${grn.rate.toFixed(2)}</td>
+                  <td style="border: 1px solid #cbd5e1; padding: 0.75rem; text-align: right; font-weight: 600;">₹${grn.totalValue.toFixed(2)}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr style="background: #f1f5f9;">
+                  <td colspan="3" style="border: 1px solid #cbd5e1; padding: 0.75rem; text-align: right; font-weight: bold;">Total Value:</td>
+                  <td style="border: 1px solid #cbd5e1; padding: 0.75rem; text-align: right; font-weight: bold; font-size: 1.125rem;">₹${grn.totalValue.toFixed(2)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <!-- Footer -->
+          <div style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid #cbd5e1;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+              <div>
+                <p style="font-size: 0.875rem; color: #64748b; margin-bottom: 2rem;">Received By:</p>
+                <div style="border-top: 1px solid #94a3b8; padding-top: 0.5rem;">
+                  <p style="font-size: 0.875rem; color: #64748b; margin: 0;">Signature & Date</p>
+                </div>
+              </div>
+              <div>
+                <p style="font-size: 0.875rem; color: #64748b; margin-bottom: 2rem;">Authorized Signatory:</p>
+                <div style="border-top: 1px solid #94a3b8; padding-top: 0.5rem;">
+                  <p style="font-size: 0.875rem; color: #64748b; margin: 0;">Signature & Stamp</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Generate PDF
+      const filename = generatePDFFilename('GRN', grn.partyChallanNumber, grn.grnDate);
+      await exportToPDF('temp-grn-print', filename);
+
+      // Clean up
+      document.body.removeChild(tempContainer);
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      alert('Failed to export PDF. Please try again.');
+    }
   };
 
   if (loading) {
@@ -518,12 +618,13 @@ export default function GRNPage() {
                 <th>Quantity</th>
                 <th>Rate</th>
                 <th>Total Value</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {grns.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-500">
+                  <td colSpan={8} className="text-center py-8 text-slate-500">
                     <FileText className="w-12 h-12 mx-auto mb-2 text-slate-400" />
                     <p>No GRNs found. Click "Create GRN" to add one.</p>
                   </td>
@@ -550,6 +651,16 @@ export default function GRNPage() {
                     <td>₹{grn.rate.toFixed(2)}</td>
                     <td className="font-bold text-green-600">
                       ₹{grn.totalValue.toFixed(2)}
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => handleDirectPDFExport(grn)}
+                        className="btn btn-primary flex items-center gap-2 text-sm"
+                        title="Export as PDF"
+                      >
+                        <Download className="w-4 h-4" />
+                        Export PDF
+                      </button>
                     </td>
                   </tr>
                 ))
